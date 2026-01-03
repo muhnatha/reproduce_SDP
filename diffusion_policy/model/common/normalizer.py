@@ -9,6 +9,9 @@ from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.model.common.dict_of_tensor_mixin import DictOfTensorMixin
 
 class LinearNormalizer(DictOfTensorMixin):
+    """ Normalize data to a specified range or to zero-mean unit-std.
+    Supports dict input where each field is normalized separately.
+    """
     avaliable_modes = ['limits', 'gaussian']
     
     @torch.no_grad()
