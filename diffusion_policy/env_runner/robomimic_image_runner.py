@@ -14,7 +14,6 @@ from diffusion_policy.gym_util.sync_vector_env import SyncVectorEnv
 from diffusion_policy.gym_util.multistep_wrapper import MultiStepWrapper
 from diffusion_policy.gym_util.video_recording_wrapper import VideoRecordingWrapper, VideoRecorder
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
-
 from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
@@ -23,12 +22,20 @@ import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.obs_utils as ObsUtils
 
-
 def create_env(env_meta, shape_meta, enable_render=True):
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
         modality_mapping[attr.get('type', 'low_dim')].append(key)
     ObsUtils.initialize_obs_modality_mapping_from_dict(modality_mapping)
+    #env_kwargs = env_meta.get('env_kwargs', {}).copy()
+    #print(f"ENV_KWARGS {env_kwargs}")
+    # FIX: Explicitly remove camera_segmentations if present to prevent TypeError
+    #if 'camera_segmentations' in env_kwargs:
+     #   env_kwargs.pop('camera_segmentations')
+
+    # Create a modified env_meta with the updated env_kwargs
+    #env_meta_modified = env_meta.copy()
+    #env_meta_modified['env_kwargs'] = env_kwargs
 
     env = EnvUtils.create_env_from_metadata(
         env_meta=env_meta,
@@ -37,7 +44,6 @@ def create_env(env_meta, shape_meta, enable_render=True):
         use_image_obs=enable_render, 
     )
     return env
-
 
 class RobomimicImageRunner(BaseImageRunner):
     """
@@ -63,9 +69,17 @@ class RobomimicImageRunner(BaseImageRunner):
             past_action=False,
             abs_action=False,
             tqdm_interval_sec=5.0,
-            n_envs=None
+            n_envs=None,
+            #camera_segmentations=None,
+            **kwargs
         ):
+        #print(f"DEBUG: kwargs received = {kwargs}")
+        #print(f"DEBUG: camera_segmentations = {camera_segmentations}")
+        #kwargs.pop('camera_segmentations', None)
         super().__init__(output_dir)
+
+        if len(kwargs) > 0:
+            print(f" Warning: Ignoring extra args: {kwargs.keys()}")
 
         if n_envs is None:
             n_envs = n_train + n_test
@@ -78,6 +92,7 @@ class RobomimicImageRunner(BaseImageRunner):
         # read from dataset
         env_meta = FileUtils.get_env_metadata_from_dataset(
             dataset_path)
+        
         # disable object state observation
         env_meta['env_kwargs']['use_object_obs'] = False
 
@@ -89,7 +104,8 @@ class RobomimicImageRunner(BaseImageRunner):
         def env_fn():
             robomimic_env = create_env(
                 env_meta=env_meta, 
-                shape_meta=shape_meta
+                shape_meta=shape_meta,
+                #camera_segmentations=camera_segmentations
             )
             # Robosuite's hard reset causes excessive memory consumption.
             # Disabled to run more envs.
@@ -119,15 +135,13 @@ class RobomimicImageRunner(BaseImageRunner):
                 max_episode_steps=max_steps
             )
         
-        # For each process the OpenGL context can only be initialized once
-        # Since AsyncVectorEnv uses fork to create worker process,
-        # a separate env_fn that does not create OpenGL context (enable_render=False)
-        # is needed to initialize spaces.
+        # FIX: Corrected indentation for dummy_env_fn
         def dummy_env_fn():
             robomimic_env = create_env(
                     env_meta=env_meta, 
                     shape_meta=shape_meta,
-                    enable_render=False
+                    enable_render=False,
+                    #camera_segmentations=camera_segmentations
                 )
             return MultiStepWrapper(
                 VideoRecordingWrapper(

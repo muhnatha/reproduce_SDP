@@ -347,7 +347,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
             if isinstance(module, nn.Linear) and module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.MultiheadAttention):
-            weight_names = ['in_proj_weight', 'q_proj_weight', 'k_proj_weight', 'v_proj_weight', 'out_proj.weight']
+            weight_names = ['in_proj_weight', 'q_proj_weight', 'k_proj_weight', 'v_proj_weight']
             for name in weight_names:
                 weight = getattr(module, name)
                 if weight is not None:
@@ -405,7 +405,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
         
         # special case the position embedding parameter in the root module
         no_decay.add('pos_emb')
-        no_decay.add("dummy_variable")
+        no_decay.add("_dummy_variable")
         if self.cond_pos_emb is not None:
             no_decay.add('cond_pos_emb')
         
