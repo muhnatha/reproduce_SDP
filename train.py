@@ -5,16 +5,18 @@ python train.py --config-name=train_diffusion_lowdim_workspace
 """
 
 import sys
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]='0'
+os.environ["MUJOCO_GL"]="osmesa"
+os.environ["PYOPENGL_PLATFORM"]="osmesa"
 import mimicgen.envs
 # use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
-# import os
 import hydra
 from omegaconf import OmegaConf
 import pathlib
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
-import os
 
 # allows arbitrary python code execution in configs using the ${eval:''} resolver
 OmegaConf.register_new_resolver("eval", eval, replace=True)
@@ -35,8 +37,6 @@ def main(cfg: OmegaConf):
     workspace.run()
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"]='0,'
-    os.environ["MUJOCO_GL"]="osmesa"
     from utils.recursive_yaml import read_yaml, write_yaml
     data = read_yaml('config/base.yaml')
     write_yaml(data, 'config/tmp/full.yaml')

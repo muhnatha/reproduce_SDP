@@ -27,10 +27,10 @@ keypoint_visible_rate: 1.0
 logging:
   group: null
   id: null
-  mode: online
+  mode: offline
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
   project: diffusion_policy_debug
-  resume: true
+  resume: false
   tags:
   - train_diffusion_transformer_hybrid
   - can_image
@@ -1049,11 +1049,12 @@ task_name: multi-task
 task_num: 8
 training:
   checkpoint_every: 1
-  debug: false
-  device: cuda:0
+  debug: true
+  device: cpu
   gradient_accumulate_every: 1
   lr_scheduler: cosine
   lr_warmup_steps: 100
+  max_eval_steps: null
   max_train_steps: null
   max_val_steps: null
   num_epochs: 3500

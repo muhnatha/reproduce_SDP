@@ -229,7 +229,7 @@ class RobomimicImageRunner(BaseImageRunner):
             env_prefixs.append('test/')
             env_init_fn_dills.append(dill.dumps(init_fn))
 
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn, context='spawn')
         # env = SyncVectorEnv(env_fns)
 
 

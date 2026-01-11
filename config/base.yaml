@@ -27,10 +27,10 @@ keypoint_visible_rate: 1.0
 logging:
   group: null
   id: null
-  mode: online
+  mode: offline
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
   project: diffusion_policy_debug
-  resume: true
+  resume: false
   tags:
   - train_diffusion_transformer_hybrid
   - can_image
@@ -136,13 +136,14 @@ shape_meta:
 task_name: multi-task
 training:
   checkpoint_every: 1
-  debug: false
-  device: cuda:0
+  debug: true
+  device: cpu
   gradient_accumulate_every: 1
   lr_scheduler: cosine
   lr_warmup_steps: 100
   max_train_steps: null
   max_val_steps: null
+  max_eval_steps: null
   num_epochs: 3500
   resume: false
   rollout_every: 50
@@ -162,8 +163,8 @@ task_num: 8
 task0: !include "config/tasks/square_d0.yaml" #2334
 task1: !include "config/tasks/stack_d0.yaml" #1632
 task2: !include "config/tasks/coffee_d0.yaml" #3402
-task3: !include "config/tasks/hammer_cleanup_d0.yaml" #4356
-task4: !include "config/tasks/mug_cleanup_d0.yaml" #5162
+task3: !include "config/tasks/hammer_cleanup_d0.yaml" #4356 - requires robosuite_task_zoo
+task4: !include "config/tasks/mug_cleanup_d0.yaml" #5162 - requires robosuite_task_zoo
 task5: !include "config/tasks/nut_assembly_d0.yaml" #5476
 task6: !include "config/tasks/stack_three_d0.yaml" #3888
 task7: !include "config/tasks/threading_d0.yaml" #3424

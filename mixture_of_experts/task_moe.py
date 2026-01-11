@@ -522,7 +522,7 @@ class TaskMoE(MoE):
         x = x.reshape(-1, emb_size)
         if skip_mask is not None:
             skip_mask = skip_mask.view(-1, 1)
-        loss,probs = self.top_k_gating(x, task_bh, skip_mask,  sample_topk=sample_topk)
+        loss,probs = self.top_k_gating(x, skip_mask=skip_mask, sample_topk=sample_topk, task_bh=task_bh)
 
         expert_inputs = x[self.batch_index]
         h = self.experts(expert_inputs, self.expert_size)
@@ -551,7 +551,7 @@ class TaskMoE(MoE):
         logits = self.f_gate[task_bh](x)
         probs = torch.softmax(logits, dim=1)
 
-        loss = self.top_k_gating(x, skip_mask, task_bh, sample_topk=sample_topk)
+        loss = self.top_k_gating(x, skip_mask=skip_mask, sample_topk=sample_topk, task_bh=task_bh)
         assert not self.bias
         hs = [torch.einsum('li,ij->lj', x, self.experts.w[i]) for i in range(self.num_experts)]
         hs = [self.activation(h) for h in hs]
