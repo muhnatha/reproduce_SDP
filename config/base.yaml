@@ -137,7 +137,7 @@ task_name: multi-task
 training:
   checkpoint_every: 1
   debug: true
-  device: cpu
+  device: cuda:0
   gradient_accumulate_every: 1
   lr_scheduler: cosine
   lr_warmup_steps: 100

@@ -182,7 +182,7 @@ task0:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -296,7 +296,7 @@ task1:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -410,7 +410,7 @@ task2:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -524,7 +524,7 @@ task3:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -638,7 +638,7 @@ task4:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -752,7 +752,7 @@ task5:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -866,7 +866,7 @@ task6:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -980,7 +980,7 @@ task7:
     fps: 10
     max_steps: 400
     n_action_steps: 8
-    n_envs: 28
+    n_envs: 8
     n_obs_steps: 2
     n_test: 50
     n_test_vis: 4
@@ -1050,7 +1050,7 @@ task_num: 8
 training:
   checkpoint_every: 1
   debug: true
-  device: cpu
+  device: cuda:0
   gradient_accumulate_every: 1
   lr_scheduler: cosine
   lr_warmup_steps: 100
