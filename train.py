@@ -9,7 +9,19 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"]='0'
 os.environ["MUJOCO_GL"]="osmesa"
 os.environ["PYOPENGL_PLATFORM"]="osmesa"
+sys.path.insert(0, '/home/cc/reproduce_SDP/mimicgen_environments')
 import mimicgen.envs
+
+# Explicitly import all environment modules to register them with robosuite
+from mimicgen.envs.robosuite.nut_assembly import NutAssembly_D0, Square_D0
+from mimicgen.envs.robosuite.stack import Stack_D0, StackThree_D0
+from mimicgen.envs.robosuite.coffee import Coffee_D0
+from mimicgen.envs.robosuite.mug_cleanup import MugCleanup_D0
+from mimicgen.envs.robosuite.threading import Threading_D0
+from mimicgen.envs.robosuite.three_piece_assembly import ThreePieceAssembly_D0
+from mimicgen.envs.robosuite.hammer_cleanup import HammerCleanup_D0
+from mimicgen.envs.robosuite.kitchen import Kitchen_D0
+
 # use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)

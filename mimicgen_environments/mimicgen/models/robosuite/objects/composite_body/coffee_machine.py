@@ -70,7 +70,7 @@ class CoffeeMachineObject(CompositeBodyObject):
             rgba=[0.839, 0.839, 0.839, 1], # silver
             joints=None,
         )
-        pod_holder_holder_size = pod_holder_holder.get_bounding_box_half_size()
+        pod_holder_holder_size = np.array(pod_holder_holder.size)
         pod_holder_holder_location = [
             body_size[0] - pod_holder_holder_size[0],
             2. * body_size[1],
@@ -176,6 +176,4 @@ class CoffeeMachineObject(CompositeBodyObject):
             body_joints=body_joints, # make sure hinge joint is added
             joints="default", # coffee machine can move
             # joints=None, # coffee machine does not move
-            total_size=total_size,
-            locations_relative_to_corner=True,
         )

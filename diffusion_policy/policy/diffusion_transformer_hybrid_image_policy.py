@@ -144,7 +144,7 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         if eval_fixed_crop:
             replace_submodules(
                 root_module=obs_encoder,
-                predicate=lambda x: isinstance(x, robomimic.models.obs_core.CropRandomizer),
+                predicate=lambda x: isinstance(x, rmbn.CropRandomizer),
                 func=lambda x:dmvc.CropRandomizer(
                     input_shape=x.input_shape,
                     crop_height=x.crop_height,

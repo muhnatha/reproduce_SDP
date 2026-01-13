@@ -126,9 +126,9 @@ class CupObject(CompositeBodyObject):
             object_parents.append(None)
 
         # total size of cup
-        body_total_size = [self.r2, self.r2, self.cup_height]
+        self.total_size = [self.r2, self.r2, self.cup_height]
         if self.add_handle:
-            body_total_size[1] += self.handle_outer_radius
+            self.total_size[1] += self.handle_outer_radius
 
         # Run super init
         super().__init__(
@@ -138,6 +138,7 @@ class CupObject(CompositeBodyObject):
             object_quats=object_quats,
             object_parents=object_parents,
             joints=joints,
-            total_size=body_total_size,
-            # locations_relative_to_corner=True,
         )
+
+    def get_bounding_box_half_size(self):
+        return np.array(self.total_size)

@@ -215,9 +215,9 @@ class MugCleanup(SingleArmEnv_MG):
             camera_heights=camera_heights,
             camera_widths=camera_widths,
             camera_depths=camera_depths,
-            camera_segmentations=camera_segmentations,
-            renderer=renderer,
-            renderer_config=renderer_config,
+            #camera_segmentations=camera_segmentations,
+            #renderer=renderer,
+            #renderer_config=renderer_config,
         )
 
     def reward(self, action=None):

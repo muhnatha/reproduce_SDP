@@ -139,6 +139,15 @@ class CoffeeMachinePodObject(MujocoXMLObject):
                          name=name, joints=[dict(type="free")],
                          obj_type="all", duplicate_collision_geoms=True)
 
+    def get_bounding_box_half_size(self):
+        horizontal_radius_site = self.worldbody.find(
+            "./body/site[@name='{}horizontal_radius_site']".format(self.naming_prefix)
+        )
+        horizontal_pos = string_to_array(horizontal_radius_site.get("pos"))
+        top_site = self.worldbody.find("./body/site[@name='{}top_site']".format(self.naming_prefix))
+        top_pos = string_to_array(top_site.get("pos"))
+        return np.array([horizontal_pos[0], horizontal_pos[1], top_pos[2]])
+
 
 class CoffeeMachineBodyObject(MujocoXMLObject):
     """
@@ -148,6 +157,15 @@ class CoffeeMachineBodyObject(MujocoXMLObject):
         super().__init__(os.path.join(XML_ASSETS_BASE_PATH, "objects/coffee_body.xml"),
                          name=name, joints=None,
                          obj_type="all", duplicate_collision_geoms=True)
+
+    def get_bounding_box_half_size(self):
+        horizontal_radius_site = self.worldbody.find(
+            "./body/site[@name='{}horizontal_radius_site']".format(self.naming_prefix)
+        )
+        horizontal_pos = string_to_array(horizontal_radius_site.get("pos"))
+        top_site = self.worldbody.find("./body/site[@name='{}top_site']".format(self.naming_prefix))
+        top_pos = string_to_array(top_site.get("pos"))
+        return np.array([horizontal_pos[0], horizontal_pos[1], top_pos[2]])
 
 
 class CoffeeMachineLidObject(MujocoXMLObject):
@@ -159,6 +177,15 @@ class CoffeeMachineLidObject(MujocoXMLObject):
                          name=name, joints=None,
                          obj_type="all", duplicate_collision_geoms=True)
 
+    def get_bounding_box_half_size(self):
+        horizontal_radius_site = self.worldbody.find(
+            "./body/site[@name='{}horizontal_radius_site']".format(self.naming_prefix)
+        )
+        horizontal_pos = string_to_array(horizontal_radius_site.get("pos"))
+        top_site = self.worldbody.find("./body/site[@name='{}top_site']".format(self.naming_prefix))
+        top_pos = string_to_array(top_site.get("pos"))
+        return np.array([horizontal_pos[0], horizontal_pos[1], top_pos[2]])
+
 
 class CoffeeMachineBaseObject(MujocoXMLObject):
     """
@@ -168,6 +195,15 @@ class CoffeeMachineBaseObject(MujocoXMLObject):
         super().__init__(os.path.join(XML_ASSETS_BASE_PATH, "objects/coffee_base.xml"),
                          name=name, joints=None,
                          obj_type="all", duplicate_collision_geoms=True)
+
+    def get_bounding_box_half_size(self):
+        horizontal_radius_site = self.worldbody.find(
+            "./body/site[@name='{}horizontal_radius_site']".format(self.naming_prefix)
+        )
+        horizontal_pos = string_to_array(horizontal_radius_site.get("pos"))
+        top_site = self.worldbody.find("./body/site[@name='{}top_site']".format(self.naming_prefix))
+        top_pos = string_to_array(top_site.get("pos"))
+        return np.array([horizontal_pos[0], horizontal_pos[1], top_pos[2]])
 
 
 class DrawerObject(MujocoXMLObject):
