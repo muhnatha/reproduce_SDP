@@ -466,7 +466,7 @@ class TaskMoE(MoE):
         self.topk_acc_probs = 0. # reset
         return topk_loss * self.w_topk_loss 
     
-    def topk_k_gating(self, x, task_bh, skip_mask=None, sample_topk=0, noise_epsilon=1e-2):
+    def top_k_gating(self, x, task_bh, skip_mask=None, sample_topk=0, noise_epsilon=1e-2):
         """Compute the top-k gating for the input.
         Args:
             x: input Tensor with shape [batch_size, input_size]

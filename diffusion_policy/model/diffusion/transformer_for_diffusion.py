@@ -165,16 +165,16 @@ class TransformerDecoderLayer(nn.Module):
     # self attention block
     def _sa_block(self, x: Tensor,
                     attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
-        x, _ = self.self_attn(x, x, x,
-                            attn_mask=attn_mask,
-                            key_padding_mask=key_padding_mask,
-                            need_weights=False)[0]
+        x = self.self_attn(x, x, x,
+                           attn_mask=attn_mask,
+                           key_padding_mask=key_padding_mask,
+                           need_weights=False)[0]
         return self.dropout1(x)
     
     # multi-head attention block
     def _mha_block(self, x:Tensor, mem:Tensor,
                     attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
-        x, _ = self.multihead_attn(x, mem, mem,
+        x = self.multihead_attn(x, mem, mem,
                                 attn_mask=attn_mask,
                                 key_padding_mask=key_padding_mask,
                                 need_weights=False)[0]
