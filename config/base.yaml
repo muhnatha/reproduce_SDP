@@ -10,7 +10,7 @@ checkpoint:
 dataloader:
   batch_size: 64
   num_workers: 8
-  persistent_workers: false
+  persistent_workers: true
   pin_memory: true
   shuffle: true
 dataset_obs_steps: 2
@@ -136,7 +136,7 @@ shape_meta:
 task_name: multi-task
 training:
   checkpoint_every: 1
-  debug: true
+  debug: false
   device: cuda:0
   gradient_accumulate_every: 1
   lr_scheduler: cosine
@@ -144,8 +144,8 @@ training:
   max_train_steps: null
   max_val_steps: null
   max_eval_steps: null
-  num_epochs: 3500
-  resume: false
+  num_epochs: 300
+  resume: true
   rollout_every: 50
   sample_every: 10
   seed: 42

@@ -62,7 +62,7 @@ class TrainDiffusionTransformerHybridWorkspace(BaseWorkspace):
 
         # resumer training
         if cfg.training.resume:
-            lastest_ckpt_path = pathlib.Path("")
+            lastest_ckpt_path = pathlib.Path("/home/cc/reproduce_SDP/outputs/2026-01-16/03-28-48/checkpoints/latest.ckpt")
             if lastest_ckpt_path.is_file():
                 print(f"Resuming from checkpoint: {lastest_ckpt_path}")
                 self.load_checkpoint(path=lastest_ckpt_path)
