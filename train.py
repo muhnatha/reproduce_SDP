@@ -30,7 +30,10 @@ from omegaconf import OmegaConf
 import pathlib
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 
-# allows arbitrary python code execution in configs using the ${eval:''} resolver
+# MODIFIED: Import continual learning workspace for continual learning experiments
+from diffusion_policy.workspace.train_continual_workspace import TrainContinualWorkspace
+
+# allows arbitrary python code execution in configs using ${eval:''} resolver
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 @hydra.main(
@@ -40,16 +43,10 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
     config_name="full.yaml",
 )
 def main(cfg: OmegaConf):
-    # resolve immediately so all the ${now:} resolvers
+    # resolve immediately so all of ${now:} resolvers
     # will use the same time.
     OmegaConf.resolve(cfg)
 
     cls = hydra.utils.get_class(cfg._target_)
-    workspace: BaseWorkspace = cls(cfg)
+    workspace = BaseWorkspace = cls(cfg)
     workspace.run()
-
-if __name__ == "__main__":
-    from utils.recursive_yaml import read_yaml, write_yaml
-    data = read_yaml('config/base.yaml')
-    write_yaml(data, 'config/tmp/full.yaml')
-    main()

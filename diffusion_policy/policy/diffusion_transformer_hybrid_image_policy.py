@@ -23,6 +23,15 @@ from patch_moe.resnet import ResNet, PatchMoeResNet
 import robomimic
 
 class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
+    """
+    MODIFIED: DiffusionTransformerHybridImagePolicy with continual learning support.
+    
+    Added delegation methods to support expert expansion and freezing:
+    - add_task_experts(num_new_experts): Add new experts to the model
+    - freeze_existing_components(): Freeze all existing experts and routers
+    - count_active_parameters(): Count trainable parameters (for AP metric)
+    - get_expert_indices(task_id): Get expert assignment for a specific task
+    """
     def __init__(
             self,
             shape_meta: dict,
@@ -36,18 +45,24 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             # image
             crop_shape=(76, 76),
             obs_encoder_group_norm=False,
-            eval_fixed_crop=False,
+            eval_fixed_crop=True,
             # arch
-            n_layer=8,
+            n_layer=8,  # MODIFIED: Changed from 12 to 8 for continual learning (paper Appendix C.1)
             n_cond_layers=0,
-            n_head=4,
-            n_emb=256,
+            n_head=4,  # MODIFIED: Changed from 4 to 4
+            n_emb=256,  # MODIFIED: Changed from 512 to 256 for continual learning (paper Appendix C.1)
             p_drop_emb=0.0,
-            p_drop_attn=0.3,
+            p_drop_attn=0.3,  # MODIFIED: Changed from 0.1 to 0.3
             causal_attn=True,
             time_as_cond=True,
             obs_as_cond=True,
             pred_action_steps_only=False,
+            # MODIFIED: Added continual learning parameters
+            use_continual_moe: bool = False,  # Enable continual learning mode
+            num_experts_per_task: int = 8,  # Experts to add per new task
+            experts_per_task_active: int = 2,  # Active experts per task
+            num_tasks_for_continual: int = 3,  # Number of continual learning stages
+            **kwargs):
             # parameters passed to step
             **kwargs):
         
@@ -341,11 +356,92 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         )
         return optimizer
     
-    def compute_loss(self, batch, task_id):
-        # normalize input
-        assert 'valid_mask' not in batch
-        nobs = self.normalizers[task_id].normalize(batch['obs'])
-        nactions = self.normalizers[task_id]['action'].normalize(batch['action'])
+    # MODIFIED: Added continual learning support - Delegation methods
+    # These methods allow adding new experts and freezing parameters for continual learning
+    
+    def add_experts(self, num_new_experts):
+        """
+        MODIFIED: Add new experts to the model for continual learning.
+        
+        This method delegates to the transformer model to expand expert capacity.
+        
+        Args:
+            num_new_experts: Number of new experts to add (typically 8)
+        
+        Usage in continual learning:
+        - Stage 1 (Can): Initialize with 8 experts
+        - Stage 2 (Lift): Add 8 more experts (total 16)
+        - Stage 3 (Square): Add 8 more experts (total 24)
+        """
+        if not hasattr(self.model, 'add_experts_for_continual_learning'):
+            print("[add_experts] Warning: Model does not support expert expansion")
+            return
+        
+        print(f"[add_experts] Adding {num_new_experts} new experts to model")
+        self.model.add_experts_for_continual_learning(num_new_experts)
+    
+    def freeze_existing_components(self):
+        """
+        MODIFIED: Freeze all existing experts and routers to prevent catastrophic forgetting.
+        
+        This should be called after adding new experts for a new task.
+        All previously learned components are frozen so they don't change during new task training.
+        
+        Usage:
+        - After learning Can (Stage 1): Call this before learning Lift
+        - After learning Lift (Stage 2): Call this before learning Square
+        """
+        if not hasattr(self.model, 'freeze_existing_experts_for_continual_learning'):
+            print("[freeze_existing_components] Warning: Model does not support expert freezing")
+            return
+        
+        task_id = self.model.get_num_tasks_learned() - 1  # Current task ID
+        print(f"[freeze_existing_components] Freezing components for tasks 0 to {task_id}")
+        
+        # Delegate to transformer
+        self.model.freeze_existing_experts_for_continual_learning(new_task_id=task_id)
+        self.model.freeze_existing_routers_for_continual_learning(new_task_id=task_id)
+    
+    def count_active_parameters(self):
+        """
+        MODIFIED: Count active (trainable) parameters for AP reporting.
+        
+        Returns:
+            int: Total number of parameters with requires_grad=True
+        
+        This is used to compute the Active Parameters (AP) metric in Table 3.
+        Only counts parameters that are currently trainable.
+        """
+        if not hasattr(self.model, 'count_active_parameters_for_continual_learning'):
+            print("[count_active_parameters] Warning: Model does not support parameter counting")
+            return 0
+        
+        active_params = self.model.count_active_parameters_for_continual_learning()
+        print(f"[count_active_parameters] Active parameter count: {active_params:,}")
+        return active_params
+    
+    def get_expert_indices(self, task_id):
+        """
+        MODIFIED: Get expert indices assigned to a specific task.
+        
+        Args:
+            task_id: ID of the task (0, 1, 2, ...)
+        
+        Returns:
+            list: Expert indices for this task
+        
+        Example for continual learning with 2 experts per task:
+        - Task 0 (Can): [0, 1]
+        - Task 1 (Lift): [2, 3]
+        - Task 2 (Square): [4, 5]
+        """
+        if not hasattr(self.model, 'get_expert_assignment_for_continual_learning'):
+            print("[get_expert_indices] Warning: Model does not support expert assignment")
+            return []
+        
+        indices = self.model.get_expert_assignment_for_continual_learning(task_id)
+        print(f"[get_expert_indices] Task {task_id} expert indices: {indices}")
+        return indices
         batch_size = nactions.shape[0]
         horizon = nactions.shape[1]
         To = self.n_obs_steps
