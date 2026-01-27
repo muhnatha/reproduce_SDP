@@ -116,7 +116,18 @@ class ParallelExperts(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
     
     def forward(self, inputs, expert_size):
-        return ParallelLinear.apply(inputs, expert_size, self.weight, self.bias)
+        expert_size_list = expert_size.tolist()
+        input_list = inputs.split(expert_size_list, dim=0)
+        output_list = []
+        for i in range(self.weight.size(0)):
+            if expert_size_list[i] > 0:
+                out = torch.mm(input_list[i], self.weight[i])
+                if self.bias is not None:
+                    out = out + self.bias[i]
+                output_list.append(out)
+            else:
+                output_list.append(torch.empty((0, self.weight.size(2)), device=inputs.device, dtype=inputs.dtype))
+        return torch.cat(output_list, dim=0)
     
 class MoE(nn.Module):
     """Call a Sparsely gated mixture of experts layer with 1-layer Feed-Forward networks as experts.

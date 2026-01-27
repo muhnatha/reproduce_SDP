@@ -125,7 +125,7 @@ def evaluate_checkpoint(checkpoint_path: str, task_names: List[str], stage: int)
             )
         
         # Extract success rate
-        success_rate = runner_log[f'{task_name}_mean_score']
+        success_rate = runner_log['test/mean_score']   
         print(f"[eval_continual] Task {task_name} Success Rate: {success_rate:.3f}")
         
         results[task_name] = {

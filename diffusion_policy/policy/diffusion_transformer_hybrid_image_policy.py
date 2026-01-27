@@ -63,8 +63,6 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             experts_per_task_active: int = 2,  # Active experts per task
             num_tasks_for_continual: int = 3,  # Number of continual learning stages
             **kwargs):
-            # parameters passed to step
-            **kwargs):
         
         super().__init__()
 
@@ -190,7 +188,8 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             causal_attn=causal_attn,
             time_as_cond=time_as_cond,
             obs_as_cond=obs_as_cond,
-            n_cond_layers=n_cond_layers
+            n_cond_layers=n_cond_layers,
+            use_continual_moe=use_continual_moe
         )
 
         self.obs_encoder = obs_encoder
@@ -307,7 +306,7 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             cond_mask,
             cond=cond,
             task_id=task_id,
-            **self.kwargs
+            **{k: v for k, v in self.kwargs.items() if k not in ('task_id', 'n_fixed_tasks')}  
         )
 
         # unnormalized prediction
@@ -359,7 +358,7 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
     # MODIFIED: Added continual learning support - Delegation methods
     # These methods allow adding new experts and freezing parameters for continual learning
     
-    def add_experts(self, num_new_experts):
+    def add_experts_for_continual_learning(self, num_new_experts):
         """
         MODIFIED: Add new experts to the model for continual learning.
         
@@ -380,12 +379,36 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         print(f"[add_experts] Adding {num_new_experts} new experts to model")
         self.model.add_experts_for_continual_learning(num_new_experts)
     
-    def freeze_existing_components(self):
+    def add_router_for_continual_learning(self, task_id=None):
+        """
+        MODIFIED: Add a new router for a new task in continual learning.
+        
+        This method delegates to the transformer model to add task-specific routing.
+        
+        Args:
+            task_id: ID of the new task (e.g., 1 for Lift after Can)
+        
+        Usage in continual learning:
+        - Stage 1 (Can): Router for task 0
+        - Stage 2 (Lift): Add router for task 1
+        - Stage 3 (Square): Add router for task 2
+        """
+        if not hasattr(self.model, 'add_router_for_continual_learning'):
+            print("[add_router] Warning: Model does not support router addition")
+            return
+        
+        print(f"[add_router] Adding router for task {task_id}")
+        self.model.add_router_for_continual_learning(task_id=task_id)
+    
+    def freeze_existing_components_for_continual_learning(self, new_task_id=None):
         """
         MODIFIED: Freeze all existing experts and routers to prevent catastrophic forgetting.
         
         This should be called after adding new experts for a new task.
         All previously learned components are frozen so they don't change during new task training.
+        
+        Args:
+            new_task_id: ID of the new task being learned. If None, computed from model state.
         
         Usage:
         - After learning Can (Stage 1): Call this before learning Lift
@@ -395,14 +418,18 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             print("[freeze_existing_components] Warning: Model does not support expert freezing")
             return
         
-        task_id = self.model.get_num_tasks_learned() - 1  # Current task ID
-        print(f"[freeze_existing_components] Freezing components for tasks 0 to {task_id}")
+        # Use provided task_id or compute from model state
+        if new_task_id is None:
+            task_id = self.model.get_num_tasks_learned() - 1  # Current task ID
+        else:
+            task_id = new_task_id
+        print(f"[freeze_existing_components] Freezing components for tasks 0 to {task_id - 1}")
         
         # Delegate to transformer
         self.model.freeze_existing_experts_for_continual_learning(new_task_id=task_id)
         self.model.freeze_existing_routers_for_continual_learning(new_task_id=task_id)
     
-    def count_active_parameters(self):
+    def count_active_parameters_for_continual_learning(self):
         """
         MODIFIED: Count active (trainable) parameters for AP reporting.
         
@@ -419,6 +446,28 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         active_params = self.model.count_active_parameters_for_continual_learning()
         print(f"[count_active_parameters] Active parameter count: {active_params:,}")
         return active_params
+    
+    def increment_tasks_learned_for_continual_learning(self):
+        """
+        MODIFIED: Increment the counter of learned tasks after completing a training stage.
+        
+        This should be called after each stage's training completes to ensure
+        the correct task_id is used when adding experts for the next task.
+        
+        The increment timing is critical:
+        - After training Stage 0 (Can): Keep num_tasks_learned=1 (so add_new_task(1) works)
+        - After training Stage 1 (Lift): Increment to 2 (so add_new_task(2) expands correctly)
+        - After training Stage 2 (Square): Increment to 3 (for consistency)
+        
+        The key insight is that when add_experts(task_id=X) is called, it expands
+        task_gate_freq for tasks 0 to (X-1). So num_tasks_learned must equal the
+        task_id being added when add_new_task is called.
+        """
+        if not hasattr(self.model, 'increment_tasks_learned_for_continual_learning'):
+            print("[increment_tasks_learned] Warning: Model does not support task increment")
+            return
+        
+        self.model.increment_tasks_learned_for_continual_learning()
     
     def get_expert_indices(self, task_id):
         """
@@ -512,8 +561,83 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         loss = loss * loss_mask.type(loss.dtype)
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
         loss = loss.mean()
-        return loss+aux_loss    
+        return loss+aux_loss
+    
+    def compute_loss(self, batch,task_id):
+        # normalize input
+        assert 'valid_mask' not in batch
+        nobs = self.normalizers[task_id].normalize(batch['obs'])
+        nactions = self.normalizers[task_id]['action'].normalize(batch['action'])
+        batch_size = nactions.shape[0]
+        horizon = nactions.shape[1]
+        To = self.n_obs_steps
 
+        # handle different ways of passing observation
+        cond = None
+        trajectory = nactions
+        if self.obs_as_cond:
+            # reshape B, T, ... to B*T
+            this_nobs = dict_apply(nobs, 
+                lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
+            nobs_features = self.obs_encoder(this_nobs)
+            # reshape back to B, T, Do
+            cond = nobs_features.reshape(batch_size, To, -1)
+            if self.pred_action_steps_only:
+                start = To - 1
+                end = start + self.n_action_steps
+                trajectory = nactions[:,start:end]
+        else:
+            # reshape B, T, ... to B*T
+            this_nobs = dict_apply(nobs, lambda x: x.reshape(-1, *x.shape[2:]))
+            nobs_features = self.obs_encoder(this_nobs)
+            # reshape back to B, T, Do
+            nobs_features = nobs_features.reshape(batch_size, horizon, -1)
+            trajectory = torch.cat([nactions, nobs_features], dim=-1).detach()
+
+        # generate impainting mask
+        if self.pred_action_steps_only:
+            condition_mask = torch.zeros_like(trajectory, dtype=torch.bool)
+        else:
+            condition_mask = self.mask_generator(trajectory.shape)
+
+        # Sample noise that we'll add to the images
+        noise = torch.randn(trajectory.shape, device=trajectory.device)
+        bsz = trajectory.shape[0]
+        # Sample a random timestep for each image
+        timesteps = torch.randint(
+            0, self.noise_scheduler.config.num_train_timesteps, 
+            (bsz,), device=trajectory.device
+        ).long()
+        # Add noise to the clean images according to the noise magnitude at each timestep
+        # (this is the forward diffusion process)
+        noisy_trajectory = self.noise_scheduler.add_noise(
+            trajectory, noise, timesteps)
+
+        # compute loss mask
+        loss_mask = ~condition_mask
+
+        # apply conditioning
+        noisy_trajectory[condition_mask] = trajectory[condition_mask]
+        
+        # Predict the noise residual
+        pred,aux_loss,probs = self.model(noisy_trajectory, timesteps, cond,task_id)
+
+        # Convert the tensor to a NumPy array
+        probs_np = probs.detach().cpu().numpy()
+
+        pred_type = self.noise_scheduler.config.prediction_type 
+        if pred_type == 'epsilon':
+            target = noise
+        elif pred_type == 'sample':
+            target = trajectory
+        else:
+            raise ValueError(f"Unsupported prediction type {pred_type}")
+
+        loss = F.mse_loss(pred, target, reduction='none')
+        loss = loss * loss_mask.type(loss.dtype)
+        loss = reduce(loss, 'b ... -> b (...)', 'mean')
+        loss = loss.mean()
+        return loss+aux_loss
 
 
             

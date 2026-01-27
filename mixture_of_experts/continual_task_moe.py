@@ -106,6 +106,16 @@ class ContinualTaskMoE(TaskMoE):
         self.frozen_expert_masks = []
         self.frozen_router_masks = []
         
+        # Initialize frozen mask for task 0 (initially nothing frozen)
+        # This ensures frozen_expert_masks[task_id] is valid when freeze_existing_experts() is called
+        self.frozen_expert_masks.append(torch.zeros(num_experts, dtype=torch.bool))
+        
+        # Initialize frozen mask for initial router(s) in f_gate
+        # This ensures frozen_router_masks[task_id] is valid when freeze_existing_routers() is called
+        for router in self.f_gate:
+            num_params = sum(p.numel() for p in router.parameters())
+            self.frozen_router_masks.append(torch.zeros(num_params, dtype=torch.bool))
+        
         # Initially, no experts are frozen
         # We'll freeze when adding new tasks
         self.num_tasks_learned = 1  # Start with 1 task learned
@@ -277,6 +287,26 @@ class ContinualTaskMoE(TaskMoE):
         del self.PE
         self.register_buffer('PE', new_PE)
         
+        # Expand task_gate_freq for all previously learned tasks
+        # These start as scalar 0 but become tensors of shape [num_experts] during training
+        for t in range(task_id):
+            if isinstance(self.task_gate_freq[t], torch.Tensor):
+                old_tensor = self.task_gate_freq[t]
+                new_tensor = torch.zeros(new_num_experts, device=old_tensor.device, dtype=old_tensor.dtype)
+                new_tensor[:old_num_experts] = old_tensor
+                self.task_gate_freq[t] = new_tensor
+        
+        # Expand topk_acc_probs for all previously learned tasks
+        # These start as scalar 0 but become tensors of shape [num_experts] during training
+        for t in range(task_id):
+            if isinstance(self.topk_acc_probs[t], torch.Tensor):
+                old_tensor = self.topk_acc_probs[t]
+                new_tensor = torch.zeros(new_num_experts, device=old_tensor.device, dtype=old_tensor.dtype)
+                new_tensor[:old_num_experts] = old_tensor
+                self.topk_acc_probs[t] = new_tensor
+        
+        # Note: token_probs has shape [k] where k is fixed, so no expansion needed
+        
         # Update task expert assignment
         # New task uses next available experts
         new_task_start_idx = old_num_experts
@@ -293,57 +323,106 @@ class ContinualTaskMoE(TaskMoE):
     
     def add_router(self, task_id=None):
         """
-        Add a new router for the new task.
+        Expand all existing routers and create a new router for the specified task.
         
         Args:
             task_id: ID of the new task (e.g., 1 for second task)
         
-        This method adds a new gating network to f_gate ModuleList.
-        The new router learns which experts to use for the new task.
+        This method:
+        1. Expands all existing routers (tasks 0 to task_id-1) to output logits for
+           the current number of experts, preserving learned weights
+        2. Creates a fresh router for the new task_id
+        
+        Note: TaskMoE.__init__ creates routers for all tasks upfront, but they are sized
+        for the initial num_experts. When we add experts, we need to expand all routers
+        so they output the correct size (2 * new_num_experts for noisy_gating).
         """
         if task_id is None:
             task_id = self.num_tasks_learned
         
-        print(f"[ContinualTaskMoE] Adding router for task {task_id}")
+        print(f"[ContinualTaskMoE] Adding/expanding routers for {self.num_experts} experts")
         print(f"[ContinualTaskMoE] Current number of routers: {len(self.f_gate)}")
         
-        # Get gating activation and configuration from existing router
+        new_output_size = 2 * self.num_experts if self.noisy_gating else self.num_experts
+        
+        # Step 1: Expand all existing routers (tasks 0 to task_id-1) to preserve learned routing
+        for existing_task_id in range(task_id):
+            old_router = self.f_gate[existing_task_id]
+            
+            # Get the final linear layer of the router
+            old_final_layer = old_router[-1]
+            old_output_size = old_final_layer.out_features
+            
+            # Skip if already correctly sized
+            if old_output_size == new_output_size:
+                print(f"[ContinualTaskMoE] Router {existing_task_id} already sized for {self.num_experts} experts, skipping")
+                continue
+            
+            print(f"[ContinualTaskMoE] Expanding router {existing_task_id} from {old_output_size} to {new_output_size} outputs")
+            
+            # Create new final layer with expanded output size
+            new_final_layer = nn.Linear(
+                old_final_layer.in_features,
+                new_output_size,
+                bias=old_final_layer.bias is not None
+            )
+            
+            # Copy old weights to new layer (preserve learned routing for existing experts)
+            with torch.no_grad():
+                new_final_layer.weight.data[:old_output_size] = old_final_layer.weight.data
+                # Initialize new outputs to zero so softmax gives ~equal small probabilities to new experts
+                new_final_layer.weight.data[old_output_size:] = 0.0
+                
+                if old_final_layer.bias is not None:
+                    new_final_layer.bias.data[:old_output_size] = old_final_layer.bias.data
+                    new_final_layer.bias.data[old_output_size:] = 0.0
+            
+            # Move to same device as old layer
+            new_final_layer = new_final_layer.to(old_final_layer.weight.device)
+            
+            # Replace final layer in the router
+            old_router[-1] = new_final_layer
+            
+            # Update frozen mask for this router (keep existing mask pattern, just expand size)
+            num_params = sum(p.numel() for p in old_router.parameters())
+            device = next(old_router.parameters()).device
+            self.frozen_router_masks[existing_task_id] = torch.zeros(num_params, dtype=torch.bool, device=device)
+        
+        # Step 2: Create a fresh router for the new task_id
+        print(f"[ContinualTaskMoE] Creating new router for task {task_id} (sized for {self.num_experts} experts)")
+        
         if self.w_finetune_MI < -100:
             # Use simple linear layer (same as finetune mode)
-            # Output: 2 * num_experts if noisy_gating else num_experts
             new_router = nn.Sequential(
                 nn.Linear(
                     self.input_size,
-                    2 * self.num_experts if self.noisy_gating else self.num_experts,
+                    new_output_size,
                     bias=False
                 )
             )
             nn.init.zeros_(new_router[-1].weight)
         else:
             # Use two-layer network with activation (same as normal mode)
-            # Structure: Linear(input_size, input_size//4) -> activation -> Linear(input_size//4, output_size)
             gating_activation = nn.GELU()
             new_router = nn.Sequential(
                 nn.Linear(self.input_size, self.input_size // 4),
                 gating_activation,
                 nn.Linear(
                     self.input_size // 4,
-                    2 * self.num_experts if self.noisy_gating else self.num_experts,
+                    new_output_size,
                     bias=True
                 )
             )
             nn.init.zeros_(new_router[-1].weight)
         
-        # Add new router to ModuleList
-        self.f_gate.append(new_router)
+        # Replace the router at task_id
+        self.f_gate[task_id] = new_router
         
-        # Initialize frozen mask for new router
-        # All parameters of new router start as trainable
-        # We'll set frozen=True for old routers when calling freeze_existing_routers()
+        # Update frozen mask for new router (all trainable)
         num_params = sum(p.numel() for p in new_router.parameters())
-        self.frozen_router_masks.append(torch.zeros(num_params, dtype=torch.bool, device=next(new_router.parameters()).device))
+        self.frozen_router_masks[task_id] = torch.zeros(num_params, dtype=torch.bool, device=next(new_router.parameters()).device)
         
-        print(f"[ContinualTaskMoE] Number of routers after adding: {len(self.f_gate)}")
+        print(f"[ContinualTaskMoE] Router at index {task_id} created (total routers: {len(self.f_gate)})")
     
     def freeze_existing_experts(self, new_task_id=None):
         """
@@ -368,25 +447,51 @@ class ContinualTaskMoE(TaskMoE):
         frozen_mask = torch.ones(self.num_experts, dtype=torch.bool, device=self.experts.weight.device)
         frozen_mask[new_task_expert_indices] = False
         
-        # Apply mask to expert parameters
-        for i, (frozen, trainable) in enumerate(zip(frozen_mask, ~frozen_mask)):
-            if frozen:
-                self.experts.weight.requires_grad_(i, False)
-                if self.experts.bias is not None:
-                    self.experts.bias.requires_grad_(i, False)
-                self.output_experts.weight.requires_grad_(i, False)
-                if self.output_experts.bias is not None:
-                    self.output_experts.bias.requires_grad_(i, False)
-            else:
-                self.experts.weight.requires_grad_(i, True)
-                if self.experts.bias is not None:
-                    self.experts.bias.requires_grad_(i, True)
-                self.output_experts.weight.requires_grad_(i, True)
-                if self.output_experts.bias is not None:
-                    self.output_experts.bias.requires_grad_(i, True)
-        
-        # Store frozen mask for this task
+        # Store frozen mask for this task (used by gradient hook)
         self.frozen_expert_masks[new_task_id] = frozen_mask.clone()
+        
+        # Register gradient hooks to zero out gradients for frozen experts
+        # This effectively freezes them while keeping the tensor as a single Parameter
+        def create_expert_grad_hook(mask):
+            def hook(grad):
+                # mask shape: (num_experts,), grad shape: (num_experts, input_size, output_size)
+                # Expand mask to match grad dimensions and zero out frozen expert gradients
+                expanded_mask = mask.view(-1, 1, 1).expand_as(grad)
+                return grad * (~expanded_mask).float()
+            return hook
+        
+        # Remove existing hooks if any
+        if hasattr(self, '_expert_grad_hooks'):
+            for hook_handle in self._expert_grad_hooks:
+                hook_handle.remove()
+        
+        self._expert_grad_hooks = []
+        
+        # Register hooks for expert weights and biases
+        hook = self.experts.weight.register_hook(create_expert_grad_hook(frozen_mask))
+        self._expert_grad_hooks.append(hook)
+        
+        if self.experts.bias is not None:
+            # Bias has shape (num_experts, output_size)
+            def create_bias_grad_hook(mask):
+                def hook(grad):
+                    expanded_mask = mask.view(-1, 1).expand_as(grad)
+                    return grad * (~expanded_mask).float()
+                return hook
+            hook = self.experts.bias.register_hook(create_bias_grad_hook(frozen_mask))
+            self._expert_grad_hooks.append(hook)
+        
+        hook = self.output_experts.weight.register_hook(create_expert_grad_hook(frozen_mask))
+        self._expert_grad_hooks.append(hook)
+        
+        if self.output_experts.bias is not None:
+            def create_bias_grad_hook(mask):
+                def hook(grad):
+                    expanded_mask = mask.view(-1, 1).expand_as(grad)
+                    return grad * (~expanded_mask).float()
+                return hook
+            hook = self.output_experts.bias.register_hook(create_bias_grad_hook(frozen_mask))
+            self._expert_grad_hooks.append(hook)
         
         # Count frozen vs trainable experts
         num_frozen = frozen_mask.sum().item()

@@ -277,12 +277,86 @@ class TransformerForDiffusion(ModuleAttrMixin):
         
         if T_cond>0:
             self.cond_pos_emb = nn.Parameter(torch.zeros(1, T_cond, n_emb))
+            self.pos_emb = nn.Parameter(torch.zeros(1, T, n_emb)) 
         
         # MODIFIED: Check if using continual learning mode
         if self.use_continual_moe:
             print("[TransformerForDiffusion] Continual learning mode enabled")
             print(f"[TransformerForDiffusion] Number of continual stages: {self.num_tasks_for_continual}")
             print(f"[TransformerForDiffusion] Experts per task: {self.num_experts_per_task}, active: {self.experts_per_task_active}")
+
+        self.input_emb = nn.Linear(input_dim, n_emb)
+
+        self.drop = nn.Dropout(p_drop_emb)
+        
+        self.encoder_only = not time_as_cond
+        self.obs_as_cond = obs_as_cond
+
+        if self.encoder_only:
+             # Main backbone is encoder
+             encoder_layer = nn.TransformerEncoderLayer(
+                d_model=n_emb,
+                nhead=n_head,
+                dim_feedforward=4*n_emb,
+                dropout=p_drop_attn,
+                activation='gelu',
+                batch_first=True,
+                norm_first=True
+            )
+             self.encoder = nn.TransformerEncoder(
+                encoder_layer=encoder_layer,
+                num_layers=n_layer
+            )
+             self.decoder = nn.Identity()
+        else:
+             # Main backbone is decoder
+             # Encoder is for condition
+             if n_cond_layers > 0:
+                 encoder_layer = nn.TransformerEncoderLayer(
+                    d_model=n_emb,
+                    nhead=n_head,
+                    dim_feedforward=4*n_emb,
+                    dropout=p_drop_attn,
+                    activation='gelu',
+                    batch_first=True,
+                    norm_first=True
+                )
+                 self.encoder = nn.TransformerEncoder(
+                    encoder_layer=encoder_layer,
+                    num_layers=n_cond_layers
+                )
+             else:
+                 self.encoder = nn.Identity()
+
+             decoder_layer = TransformerDecoderLayer(
+                d_model=n_emb,
+                n_tasks=n_tasks,
+                nhead=n_head,
+                dim_feedforward=4*n_emb,
+                dropout=p_drop_attn,
+                activation='gelu',
+                batch_first=True,
+                norm_first=True,
+                use_continual_moe=use_continual_moe,
+                num_experts_per_task=num_experts_per_task,
+                experts_per_task_active=experts_per_task_active,
+                num_tasks_for_continual=num_tasks_for_continual
+            )
+             self.decoder = TransformerDecoder(
+                decoder_layer=decoder_layer,
+                num_layers=n_layer
+            )
+
+        if causal_attn:
+             mask = nn.Transformer.generate_square_subsequent_mask(T)
+             self.register_buffer('mask', mask)
+        else:
+             self.mask = None
+        
+        self.memory_mask = None
+        
+        self.ln_f = nn.LayerNorm(n_emb)
+        self.head = nn.Linear(n_emb, output_dim)
     
     def add_experts_for_continual_learning(self, num_new_experts, task_id=None):
         """
@@ -364,6 +438,19 @@ class TransformerForDiffusion(ModuleAttrMixin):
             if hasattr(layer, 'task_moe_layer') and hasattr(layer.task_moe_layer, 'freeze_existing_routers'):
                 layer.task_moe_layer.freeze_existing_routers(new_task_id=new_task_id)
     
+    def get_num_tasks_learned(self):
+        """
+        Get the number of tasks learned so far in continual learning mode.
+        
+        Returns:
+            int: Number of tasks learned (1 for initial task, 2 after first continual task, etc.)
+        """
+        if not self.use_continual_moe:
+            print("[get_num_tasks_learned] Warning: Continual learning mode not enabled")
+            return 1
+        
+        return self.decoder.layers[0].task_moe_layer.get_num_tasks_learned()
+    
     def count_active_parameters_for_continual_learning(self):
         """
         MODIFIED: Count active (trainable) parameters in ContinualTaskMoE mode.
@@ -420,17 +507,6 @@ class TransformerForDiffusion(ModuleAttrMixin):
                 return layer.task_moe_layer.get_expert_assignment(task_id)
         
         return []
-        
-        for layer in self.decoder.layers:
-            if hasattr(layer, 'task_moe_layer') and hasattr(layer.task_moe_layer, 'get_expert_assignment'):
-                return layer.task_moe_layer.get_expert_assignment(task_id)
-        
-        return []
-        
-        # no param
-        pass
-        else:
-            pass
     
     def get_optim_groups(self, weight_decay: float=1e-3):
         """
