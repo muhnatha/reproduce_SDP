@@ -15,7 +15,7 @@ import mimicgen.envs
 # Explicitly import all environment modules to register them with robosuite
 from mimicgen.envs.robosuite.nut_assembly import NutAssembly_D0, Square_D0
 from mimicgen.envs.robosuite.stack import Stack_D0, StackThree_D0
-from mimicgen.envs.robosuite.coffee import Coffee_D0
+from mimicgen.envs.robosuite.coffee import Coffee_D0, CoffeePreparation_D0
 from mimicgen.envs.robosuite.mug_cleanup import MugCleanup_D0
 from mimicgen.envs.robosuite.threading import Threading_D0
 from mimicgen.envs.robosuite.three_piece_assembly import ThreePieceAssembly_D0
