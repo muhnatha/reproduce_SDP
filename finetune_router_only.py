@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fine-tune pretrained SDP model on Coffee Preparation task
+Fine-tune pretrained SDP model on stack_three task
 Freezes expert weights in TaskMoE, trains only router (gates) + vision encoder + transformer
 """
 
@@ -22,6 +22,7 @@ import shutil
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.dataset.robomimic_replay_image_dataset import RobomimicReplayImageDataset
+from diffusion_policy.model.common.normalizer import LinearNormalizer
 from omegaconf.omegaconf import OmegaConf
 import yaml
 import pickle
@@ -114,20 +115,20 @@ def freeze_expert_weights(model):
         print(f"  ... and {len(frozen_params) - 10} more")
 
 
-def create_coffee_preparation_dataloader(dataset_path, batch_size=64, num_workers=4, return_normalizer=True):
+def create_stack_three_dataloader(dataset_path, batch_size=64, num_workers=4, return_normalizer=True):
     """
-    Create dataloader for Coffee Preparation task
+    Create dataloader for stack_three task
 
     Args:
         dataset_path: Path to HDF5 dataset
         batch_size: Batch size
         num_workers: Number of dataloader workers
-        return_normalizer: If True, return normalizer for Coffee Preparation task
+        return_normalizer: If True, return normalizer for stack_three task
     
     Returns:
         dataloader, dataset, normalizer (if return_normalizer=True)
     """
-    print(f"\nLoading Coffee Preparation dataset from {dataset_path}")
+    print(f"\nLoading stack_three dataset from {dataset_path}")
     
     # Load shape meta from config
     shape_meta = {
@@ -176,9 +177,76 @@ def create_coffee_preparation_dataloader(dataset_path, batch_size=64, num_worker
         return dataloader, dataset
 
 
+def load_base_task_normalizers(device='cpu'):
+    """
+    Load normalizers from base tasks (square and stack)
+
+    Args:
+        device: Device to load normalizers on
+
+    Returns:
+        List of normalizers [square_norm, stack_norm]
+    """
+    base_normalizers = []
+
+    # Common shape meta
+    shape_meta = {
+        'action': {'shape': [7]},
+        'obs': {
+            'agentview_image': {'shape': [3, 84, 84], 'type': 'rgb'},
+            'robot0_eef_pos': {'shape': [3]},
+            'robot0_eef_quat': {'shape': [4]},
+            'robot0_eye_in_hand_image': {'shape': [3, 84, 84], 'type': 'rgb'},
+            'robot0_gripper_qpos': {'shape': [2]},
+        }
+    }
+
+    # Load square dataset and normalizer
+    try:
+        square_dataset = RobomimicReplayImageDataset(
+            dataset_path='datasets/core/square_d0.hdf5',
+            horizon=10,
+            n_obs_steps=2,
+            pad_before=1,
+            pad_after=7,
+            rotation_rep='rotation_6d',
+            seed=42,
+            shape_meta=shape_meta,
+            use_cache=True,
+            val_ratio=0.02
+        )
+        square_norm = square_dataset.get_normalizer()
+        square_norm.to(device)
+        base_normalizers.append(square_norm)
+        print(f"Loaded square normalizer")
+    except Exception as e:
+        print(f"Warning: Could not load square normalizer: {e}")
+
+    # Load stack dataset and normalizer
+    try:
+        stack_dataset = RobomimicReplayImageDataset(
+            dataset_path='datasets/core/stack_d0.hdf5',
+            horizon=10,
+            n_obs_steps=2,
+            pad_before=1,
+            pad_after=7,
+            rotation_rep='rotation_6d',
+            seed=42,
+            shape_meta=shape_meta,
+            use_cache=True,
+            val_ratio=0.02
+        )
+        stack_norm = stack_dataset.get_normalizer()
+        stack_norm.to(device)
+        base_normalizers.append(stack_norm)
+        print(f"Loaded stack normalizer")
+    except Exception as e:
+        print(f"Warning: Could not load stack normalizer: {e}")
+
+    return base_normalizers
 
 
-def train_epoch(model, dataloader, optimizer, device, task_id=2, epoch=0, 
+def train_epoch(model, dataloader, optimizer, device, task_id=2, epoch=0,
               task2_normalizer=None):
     """
     Train for one epoch
@@ -188,9 +256,9 @@ def train_epoch(model, dataloader, optimizer, device, task_id=2, epoch=0,
         dataloader: Training dataloader
         optimizer: Optimizer
         device: Device
-        task_id: Task ID for coffee preparation
+        task_id: Task ID for stack_three
         epoch: Current epoch number
-        task2_normalizer: Optional normalizer for Coffee Preparation task (task_id=2)
+        task2_normalizer: Optional normalizer for stack_three task (task_id=2)
 
     Returns:
         mean_loss
@@ -213,7 +281,7 @@ def train_epoch(model, dataloader, optimizer, device, task_id=2, epoch=0,
         # Forward pass
         optimizer.zero_grad()
         try:
-            # Try to use task_id=2 (Coffee Preparation)
+            # Try to use task_id=2 (stack_three)
             loss, probs = model.compute_loss(batch, task_id=task_id)
             
             # Capture expert routing probabilities if available
@@ -224,8 +292,8 @@ def train_epoch(model, dataloader, optimizer, device, task_id=2, epoch=0,
                     'probs': probs
                 })
         except IndexError as e:
-            # task_id=2 fails because model only has 2 normalizers (0:Coffee, 1:Mug Cleanup)
-            # Fall back to task_id=0 (Coffee) which is similar
+            # task_id=2 fails because model only has 2 normalizers (0:square, 1:stack)
+            # Fall back to task_id=0 (square) which is similar
             print(f"Warning: task_id=2 failed, using task_id=0 fallback")
             loss, probs = model.compute_loss(batch, task_id=0)
             
@@ -321,13 +389,13 @@ def save_checkpoint(workspace, model, optimizer, epoch, loss, output_dir):
 
 @click.command()
 @click.option('-c', '--checkpoint', 
-              default='outputs/2026-01-29/08-27-22/checkpoints/latest.ckpt',
+              default='outputs/2026-02-01/07-57-01/checkpoints/latest.ckpt',
               help='Path to pretrained checkpoint')
 @click.option('-d', '--dataset',
-              default='datasets/core/coffee_preparation_d0.hdf5',
-              help='Path to coffee preparation dataset')
+              default='datasets/core/stack_three_d0.hdf5',
+              help='Path to stack_three dataset')
 @click.option('-o', '--output_dir',
-              default='outputs/coffee_preparation_finetune',
+              default='outputs/stack_three_finetune',
               help='Output directory for finetuning')
 @click.option('-e', '--epochs',
               default=100,
@@ -355,10 +423,10 @@ def save_checkpoint(workspace, model, optimizer, epoch, loss, output_dir):
 def main(checkpoint, dataset, output_dir, epochs, batch_size, learning_rate, 
          device, save_every, validate_every):
     """
-    Fine-tune pretrained SDP model on Coffee Preparation task
+    Fine-tune pretrained SDP model on stack_three task
     """
     print("=" * 80)
-    print("Fine-tuning SDP Model on Coffee Preparation Task")
+    print("Fine-tuning SDP Model on stack_three Task")
     print("=" * 80)
     
     # Step 1: Load pretrained checkpoint
@@ -376,21 +444,30 @@ def main(checkpoint, dataset, output_dir, epochs, batch_size, learning_rate,
     freeze_expert_weights(model)
     
     # Step 3: Create dataloader
-    dataloader, train_dataset, normalizer = create_coffee_preparation_dataloader(
+    dataloader, train_dataset, normalizer = create_stack_three_dataloader(
         dataset, batch_size=batch_size, num_workers=4, return_normalizer=True
     )
     
-    # Step 4: Add normalizer to model
-    # Coffee Preparation normalizer returned separately when return_normalizer=True
-    # model.normalizers already has Coffee (index 0) and Mug Cleanup (index 1)
-    print(f"Coffee Preparation normalizer: {type(normalizer).__name__}")
-    
-    # Add Coffee Preparation normalizer as task_id=2
+    # Step 4: Load base task normalizers
+    base_normalizers = load_base_task_normalizers(device)
+    print(f"Loaded {len(base_normalizers)} base task normalizers")
+
+    # Step 5: Set base normalizers on model
+    model.normalizers = base_normalizers
+    print(f"Model now has {len(model.normalizers)} normalizers (should be 2: square, stack)")
+    for i, norm in enumerate(model.normalizers):
+        print(f"  Normalizer {i}: {type(norm).__name__}")
+
+    # Step 6: Add stack_three normalizer
+    print(f"stack_three normalizer: {type(normalizer).__name__}")
     model.normalizers.append(normalizer)
     normalizer.to(device)
-    print(f"Added Coffee Preparation normalizer. Total normalizers: {len(model.normalizers)}")
+    print(f"Added stack_three normalizer. Total normalizers: {len(model.normalizers)}")
+    print(f"  Index 0: square")
+    print(f"  Index 1: stack")
+    print(f"  Index 2: stack_three (new task)")
 
-    # Step 5: Create optimizer directly (avoid calling create_optimizer which may reset model.normalizers)
+    # Step 7: Create optimizer directly (avoid calling create_optimizer which may reset model.normalizers)
     # Group parameters by type (mutually exclusive)
     obs_encoder_params = [p for n, p in model.named_parameters() if p.requires_grad and 'obs_encoder' in n]
     router_params = [p for n, p in model.named_parameters() if p.requires_grad and 'obs_encoder' not in n and ('f_gate' in n or 'task_moe' in n)]
@@ -435,10 +512,10 @@ def main(checkpoint, dataset, output_dir, epochs, batch_size, learning_rate,
         betas=(0.9, 0.95),
     )
     
-    # Step 6: Create output directory
+    # Step 8: Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Step 7: Training loop
+
+    # Step 9: Training loop
     print("\n" + "=" * 80)
     print("Starting Training")
     print("=" * 80)
