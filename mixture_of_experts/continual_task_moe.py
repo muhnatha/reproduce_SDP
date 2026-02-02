@@ -95,9 +95,9 @@ class ContinualTaskMoE(TaskMoE):
         # Example: [[0, 1], [2, 3], [4, 5]] for 3 tasks with 2 experts each
         self.task_expert_assignment = []
         
-        # Initialize assignment for first task
-        # Task 0 uses experts 0 to (k-1), i.e., 0 to 1 for k=2
-        first_task_experts = list(range(min(k, num_experts)))
+        # FIXED: Initialize assignment for first task consistently with subsequent tasks
+        # Now Task 0 uses experts_per_task_active experts, same as other tasks
+        first_task_experts = list(range(min(self.experts_per_task_active, num_experts)))
         self.task_expert_assignment.append(first_task_experts)
         
         # Track frozen state
@@ -106,9 +106,55 @@ class ContinualTaskMoE(TaskMoE):
         self.frozen_expert_masks = []
         self.frozen_router_masks = []
         
-        # Initialize frozen mask for task 0 (initially nothing frozen)
-        # This ensures frozen_expert_masks[task_id] is valid when freeze_existing_experts() is called
-        self.frozen_expert_masks.append(torch.zeros(num_experts, dtype=torch.bool))
+        # FIXED: Initialize frozen mask for task 0 correctly
+        # Only the experts assigned to task 0 should be active, others should be frozen
+        # This ensures Stage 0 has the same number of active parameters as other stages
+        frozen_mask = torch.ones(num_experts, dtype=torch.bool)
+        frozen_mask[first_task_experts] = False  # Mark assigned experts as active
+        self.frozen_expert_masks.append(frozen_mask)
+        
+        # Count frozen vs trainable experts for task 0
+        num_frozen = frozen_mask.sum().item()
+        num_trainable = (~frozen_mask).sum().item()
+        print(f"[ContinualTaskMoE] Task 0: Frozen {num_frozen} experts, {num_trainable} trainable (experts {first_task_experts})")
+        
+        # FIXED: Set up gradient hooks for task 0 to enforce freezing from the start
+        # This ensures only the assigned experts for task 0 can be trained
+        def create_expert_grad_hook(mask):
+            def hook(grad):
+                # mask shape: (num_experts,), grad shape: (num_experts, input_size, output_size)
+                # Expand mask to match grad dimensions and zero out frozen expert gradients
+                expanded_mask = mask.view(-1, 1, 1).expand_as(grad)
+                return grad * (~expanded_mask).float()
+            return hook
+        
+        self._expert_grad_hooks = []
+        
+        # Register hooks for expert weights and biases
+        hook = self.experts.weight.register_hook(create_expert_grad_hook(frozen_mask))
+        self._expert_grad_hooks.append(hook)
+        
+        if self.experts.bias is not None:
+            # Bias has shape (num_experts, output_size)
+            def create_bias_grad_hook(mask):
+                def hook(grad):
+                    expanded_mask = mask.view(-1, 1).expand_as(grad)
+                    return grad * (~expanded_mask).float()
+                return hook
+            hook = self.experts.bias.register_hook(create_bias_grad_hook(frozen_mask))
+            self._expert_grad_hooks.append(hook)
+        
+        hook = self.output_experts.weight.register_hook(create_expert_grad_hook(frozen_mask))
+        self._expert_grad_hooks.append(hook)
+        
+        if self.output_experts.bias is not None:
+            def create_bias_grad_hook(mask):
+                def hook(grad):
+                    expanded_mask = mask.view(-1, 1).expand_as(grad)
+                    return grad * (~expanded_mask).float()
+                return hook
+            hook = self.output_experts.bias.register_hook(create_bias_grad_hook(frozen_mask))
+            self._expert_grad_hooks.append(hook)
         
         # Initialize frozen mask for initial router(s) in f_gate
         # This ensures frozen_router_masks[task_id] is valid when freeze_existing_routers() is called
@@ -116,8 +162,6 @@ class ContinualTaskMoE(TaskMoE):
             num_params = sum(p.numel() for p in router.parameters())
             self.frozen_router_masks.append(torch.zeros(num_params, dtype=torch.bool))
         
-        # Initially, no experts are frozen
-        # We'll freeze when adding new tasks
         self.num_tasks_learned = 1  # Start with 1 task learned
         
         print(f"[ContinualTaskMoE] Initialized with {num_experts} experts for task 0")
@@ -529,27 +573,54 @@ class ContinualTaskMoE(TaskMoE):
         """
         Count the number of active (trainable) parameters.
         
+        FIXED: Now uses frozen_expert_masks instead of requires_grad to accurately
+        count only the truly trainable parameters, not just those with gradients enabled.
+        
         Returns:
-            int: Total number of parameters with requires_grad=True
+            int: Total number of parameters that are actually trainable (not frozen)
         
         This is used to compute the Active Parameters (AP) metric in Table 3.
-        Only counts parameters that are currently trainable (i.e., not frozen).
+        Only counts parameters that are currently trainable (i.e., not frozen via gradient hooks).
         """
-        # Count trainable expert parameters
+        # FIXED: Count expert parameters using frozen masks, not requires_grad
         expert_param_count = 0
-        if self.experts.weight.requires_grad:
-            expert_param_count += self.experts.weight.numel()
         
-        if self.experts.bias is not None and self.experts.bias.requires_grad:
-            expert_param_count += self.experts.bias.numel()
+        # Check if we have frozen masks to use for accurate counting
+        if hasattr(self, 'frozen_expert_masks') and len(self.frozen_expert_masks) > 0:
+            # Use the most recent frozen mask to determine which experts are active
+            frozen_mask = self.frozen_expert_masks[-1]
+            num_active_experts = (~frozen_mask).sum().item()
+            
+            # Count only active expert parameters
+            expert_weight_params_per_expert = self.experts.weight.shape[1] * self.experts.weight.shape[2]
+            expert_param_count += num_active_experts * expert_weight_params_per_expert
+            
+            if self.experts.bias is not None:
+                expert_bias_params_per_expert = self.experts.bias.shape[1]
+                expert_param_count += num_active_experts * expert_bias_params_per_expert
+            
+            output_expert_weight_params_per_expert = self.output_experts.weight.shape[1] * self.output_experts.weight.shape[2]
+            expert_param_count += num_active_experts * output_expert_weight_params_per_expert
+            
+            if self.output_experts.bias is not None:
+                output_expert_bias_params_per_expert = self.output_experts.bias.shape[1]
+                expert_param_count += num_active_experts * output_expert_bias_params_per_expert
+                
+        else:
+            # Fallback: use the original (incorrect) method if no frozen masks exist
+            if self.experts.weight.requires_grad:
+                expert_param_count += self.experts.weight.numel()
+            
+            if self.experts.bias is not None and self.experts.bias.requires_grad:
+                expert_param_count += self.experts.bias.numel()
+            
+            if self.output_experts.weight.requires_grad:
+                expert_param_count += self.output_experts.weight.numel()
+            
+            if self.output_experts.bias is not None and self.output_experts.bias.requires_grad:
+                expert_param_count += self.output_experts.bias.numel()
         
-        if self.output_experts.weight.requires_grad:
-            expert_param_count += self.output_experts.weight.numel()
-        
-        if self.output_experts.bias is not None and self.output_experts.bias.requires_grad:
-            expert_param_count += self.output_experts.bias.numel()
-        
-        # Count trainable router parameters
+        # Count trainable router parameters (router freezing works correctly with requires_grad)
         router_param_count = 0
         for task_idx, router in enumerate(self.f_gate):
             if task_idx < self.num_tasks_learned:
@@ -569,7 +640,7 @@ class ContinualTaskMoE(TaskMoE):
         
         total_active_params += other_param_count
         
-        print(f"[ContinualTaskMoE] Active parameter count: {total_active_params:,} (experts: {expert_param_count:,}, routers: {router_param_count:,}, other: {other_param_count:,})")
+        print(f"[ContinualTaskMoE] FIXED - Active parameter count: {total_active_params:,} (experts: {expert_param_count:,}, routers: {router_param_count:,}, other: {other_param_count:,})")
         
         return total_active_params
     

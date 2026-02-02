@@ -134,7 +134,7 @@ dataloader:
 
 val_dataloader:
   batch_size: 64
-  num_workers: 4
+  num_workers: 12
   persistent_workers: false
   pin_memory: true
   shuffle: false
@@ -149,7 +149,7 @@ training:
   lr_warmup_steps: 1000
   max_train_steps: null
   max_val_steps: null
-  num_epochs: 500
+  num_epochs: 1
   resume: true
   rollout_every: 50
   sample_every: 5

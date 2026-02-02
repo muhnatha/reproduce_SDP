@@ -459,17 +459,25 @@ class TransformerForDiffusion(ModuleAttrMixin):
             int: Total number of parameters with requires_grad=True
         
         This is used to compute the Active Parameters (AP) metric in Table 3.
+        Only counts parameters that are currently trainable (not frozen via gradient hooks).
         """
         if not self.use_continual_moe:
             print("[count_active_parameters_for_continual_learning] Warning: Continual learning mode not enabled")
             return 0
         
         total_active = 0
+        
+        # Count parameters from ContinualTaskMoE layers (properly accounting for frozen masks)
+        for layer in self.decoder.layers:
+            if hasattr(layer, 'task_moe_layer') and hasattr(layer.task_moe_layer, 'get_active_parameter_count'):
+                total_active += layer.task_moe_layer.get_active_parameter_count()
+        
+        # Count non-MoE parameters (encoder, attention, norm, etc.)
         for name, param in self.named_parameters():
-            if param.requires_grad:
+            if 'task_moe_layer' not in name and param.requires_grad:
                 total_active += param.numel()
         
-        print(f"[TransformerForDiffusion] Active parameter count: {total_active}")
+        print(f"[TransformerForDiffusion] Active parameter count: {total_active:,}")
         return total_active
     
     def increment_tasks_learned_for_continual_learning(self):
