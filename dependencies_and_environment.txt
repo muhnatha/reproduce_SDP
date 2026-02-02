@@ -1,0 +1,221 @@
+===============================================================================
+                    DEPENDENCIES AND ENVIRONMENT DOCUMENTATION
+                              SDP Project - Generated 2026-02-02
+===============================================================================
+
+1. SYSTEM INFORMATION
+===============================================================================
+Operating System: Linux Ubuntu 20.04 (5.4.0-216-generic kernel)
+Architecture: x86_64
+GPU: NVIDIA A100-PCIe (40GB memory)
+CUDA Version: 11.4
+NVIDIA Driver: 470.256.02
+GPU Memory Usage: 0MiB / 40536MiB (idle)
+
+===============================================================================
+2. PYTHON ENVIRONMENT
+===============================================================================
+Python Version: 3.9.18
+Environment Manager: Conda
+Active Environment: sdp
+Environment Path: /home/cc/miniconda3/envs/sdp
+Prefix: /home/cc/miniconda3/envs/sdp
+
+===============================================================================
+3. CORE DEPENDENCIES
+===============================================================================
+
+--- Machine Learning Framework ---
+- pytorch: 1.12.1 (with CUDA 11.6 support)
+- pytorch3d: 0.7.0
+- torchvision: 0.13.1
+- pytorch-mutex: 1.0 (cuda)
+- cudatoolkit: 11.6.0
+
+--- Data Science & Numerical Computing ---
+- numpy: 1.23.3
+- scipy: 1.9.1
+- pandas: 2.2.3
+- numba: 0.56.4 (specified version)
+- mkl: 2023.2.0 (Intel Math Kernel Library)
+
+--- Computer Vision & Image Processing ---
+- py-opencv: 4.6.0
+- imageio: 2.22.0
+- imageio-ffmpeg: 0.4.7
+- imagecodecs: 2022.8.8 (conda) / 2022.9.26 (pip)
+- scikit-image: 0.19.3
+- pillow: 9.2.0
+
+--- Robotics & Simulation ---
+- robosuite: 1.2.0 (GitHub source)
+- robomimic: 0.2.0
+- gym: 0.21.0
+- pymunk: 6.2.1
+- pybullet-svl: 3.1.6.4
+- free-mujoco-py: 2.1.6
+- dm-control: 1.0.9
+
+--- Deep Learning & AI ---
+- diffusers: 0.11.1
+- huggingface-hub: 0.10.1 (conda) / 0.34.4 (conda)
+- accelerate: 0.13.2
+- datasets: 2.6.1
+- r3m: (GitHub source)
+
+--- Experiment Tracking & Visualization ---
+- wandb: 0.13.3
+- tensorboard: 2.10.1
+- tensorboardx: 2.5.1
+- matplotlib: 3.6.1
+- tensorboard-data-server: 0.6.1
+
+--- Configuration & Utilities ---
+- hydra-core: 1.2.0
+- omegaconf: 2.2.3
+- einops: 0.4.1
+- tqdm: 4.64.1
+- click: 8.0.4
+- psutil: 5.9.2
+- termcolor: 2.0.1
+
+--- Data Storage & Processing ---
+- h5py: 3.7.0
+- zarr: 2.12.0
+- numcodecs: 0.10.2
+- boto3: 1.24.96 (AWS SDK)
+- ray: 2.2.0 (with tune and default)
+
+--- Development & Testing ---
+- ipykernel: 6.16.2
+- jupyter_core: 5.8.1
+- pytest (implicit, not listed but available)
+- debugpy: 1.8.16
+
+--- System & Performance ---
+- llvm-openmp: 14.0.6 (for CPU affinity fix)
+- threadpoolctl: 3.1.0
+- cython: 0.29.32
+
+===============================================================================
+4. PROJECT-SPECIFIC PACKAGES
+===============================================================================
+--- Local Development Packages ---
+- diffusion-policy: 0.0.0 (local package)
+- mixture-of-experts: 0.2.3
+- parallel-experts: 0.0.0
+- mimicgen: 1.0.0
+- pyyaml-include: 1.4.1
+
+--- External Source Packages ---
+- r3m: facebookresearch/r3m@b2334e726887fa0206962d7984c69c5fb09cceab
+- robosuite: cheng-chi/robosuite@277ab9588ad7a4f4b55cf75508b44aa67ec171f0
+
+===============================================================================
+5. CONFIGURATION FILES
+===============================================================================
+--- Primary Environment Specifications ---
+- conda_environment.yaml: 67 core dependencies
+- environment_backup.yaml: 420+ packages (full conda export)
+- requirements.txt: Minimal (pyyaml-include==1.4.1 only)
+- setup.py: Basic setup for diffusion_policy package
+
+--- Configuration Directories ---
+- config/: Main project configuration files
+  - base.yaml, base_continual.yaml, continual.yaml
+  - tasks/: Various task configurations (lift, can, square, etc.)
+  
+- diffusion_policy/config/: Diffusion policy specific configs
+  - Training configurations for various models and workspaces
+  - Task-specific configurations for different environments
+
+--- Development Configuration ---
+- pyrightconfig.json: Pyright language server configuration
+- .gitignore: Git ignore patterns
+
+===============================================================================
+6. KEY PATHS & DIRECTORIES
+===============================================================================
+Project Root: /home/cc/reproduce_SDP
+Active Environment: /home/cc/miniconda3/envs/sdp
+
+--- Important Directories ---
+- config/: Project configuration files
+- datasets/: Dataset storage
+- diffusion_policy/: Main package code
+- mimicgen/, mimicgen_environments/: Simulation environments
+- mixture_of_experts/: MoE implementation
+- results/, eval_results_epoch299/: Training/evaluation outputs
+- utils/: Utility scripts
+- patch_moe/: Patch files for MoE
+
+--- Configuration Templates ---
+- robosuite-task-zoo/: Task configurations for RoboSuite
+- mimicgen_exps/templates/: Experiment templates
+
+===============================================================================
+7. GPU & COMPUTING RESOURCES
+===============================================================================
+GPU Details:
+- Model: NVIDIA A100-PCIe
+- Memory: 40GB GDDR6
+- Driver Version: 470.256.02
+- CUDA Support: 11.4 (system) / 11.6 (conda cudatoolkit)
+- Current Usage: Idle (0MiB / 40536MiB)
+
+===============================================================================
+8. INSTALLATION NOTES
+===============================================================================
+--- Critical Dependencies ---
+- LLVM OpenMP (v14): Required for CPU affinity fix (PyTorch issue #99625)
+- free-mujoco-py: Requires system dependencies:
+  * libosmesa6-dev, libgl1-mesa-glx, libglfw3, patchelf
+  
+--- Package Version Constraints ---
+- numba: Pinned to 0.56.4 (compatibility)
+- imagecodecs: Dual installation (conda 2022.8.8, pip 2022.9.26)
+- cudatoolkit: 11.6 (specific PyTorch compatibility)
+
+--- Custom Source Installations ---
+- robosuite: Custom fork for SDP compatibility
+- r3m: Facebook Research repository specific commit
+
+===============================================================================
+9. POTENTIAL ISSUES & WORKAROUNDS
+===============================================================================
+--- Known Fixes Applied ---
+1. CPU Affinity Issue: Fixed with llvm-openmp=14
+2. ImageCodecs Conflict: Managed via conda/pip dual installation
+3. PyTorch Compatibility: Specific version alignment with CUDA 11.6
+
+--- System Dependencies Required ---
+- libosmesa6-dev: For MuJoCo rendering
+- libgl1-mesa-glx: OpenGL support
+- libglfw3: Windowing library
+- patchelf: Binary patching for MuJoCo
+
+===============================================================================
+10. QUICK REPRODUCTION COMMANDS
+===============================================================================
+--- Environment Setup ---
+conda env create -f conda_environment.yaml
+conda activate sdp
+
+--- Package Installation ---
+pip install -e .  # For diffusion_policy
+
+--- GPU Verification ---
+nvidia-smi
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+
+===============================================================================
+END OF DOCUMENTATION
+===============================================================================
+
+This document was generated on 2026-02-02 and represents the complete dependency
+and environment configuration for the SDP (Stereo Diffusion Policy) project.
+
+For questions or updates, refer to the original configuration files:
+- conda_environment.yaml
+- environment_backup.yaml  
+- requirements.txt
