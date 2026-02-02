@@ -48,7 +48,7 @@ def load_and_validate_data(probs_path):
     return all_probs
 
 
-def aggregate_probs(all_probs, num_experts=8, horizon=10, epochs_range=None):
+def aggregate_probs(all_probs, num_experts=8, horizon=100, epochs_range=None):
     """
     Aggregate probabilities across batches and epochs
 
